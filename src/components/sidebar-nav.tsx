@@ -42,6 +42,7 @@ export function SidebarNav({ isOpen = true, onClose }: SidebarNavProps) {
       if (cancelled) return
       const user = data.user
       if (!user) return
+      const userId = user.id
       setUserName(user.user_metadata?.name || user.email || '')
 
       async function loadUnread() {
@@ -49,7 +50,7 @@ export function SidebarNav({ isOpen = true, onClose }: SidebarNavProps) {
         const { data: rows } = await supabase
           .from('whatsapp_conversations')
           .select('unread_count')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
         if (cancelled) return
         const total = (rows ?? []).reduce((s: number, c: { unread_count: number }) => s + (c.unread_count ?? 0), 0)
         setUnread(total)
@@ -61,7 +62,7 @@ export function SidebarNav({ isOpen = true, onClose }: SidebarNavProps) {
         .on('postgres_changes', {
           event: '*', schema: 'public',
           table: 'whatsapp_conversations',
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${userId}`,
         }, () => loadUnread())
         .subscribe()
     })
