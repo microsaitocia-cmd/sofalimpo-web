@@ -282,6 +282,7 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true)
   const [drawer, setDrawer] = useState<Partial<Cliente> | null | false>(false)
   const [selecionado, setSelecionado] = useState<Cliente | null>(null)
+  const [drawerTab, setDrawerTab] = useState<'dados' | 'historico'>('dados')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   async function carregar(eId: string, query = '') {
@@ -378,13 +379,13 @@ export default function ClientesPage() {
             {favoritos.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Favoritos</p>
-                {favoritos.map(c => <ClienteRow key={c.id} c={c} onToggleFav={toggleFavorito} onClick={() => { setSelecionado(c); setDrawer(c) }} />)}
+                {favoritos.map(c => <ClienteRow key={c.id} c={c} onToggleFav={toggleFavorito} onClick={() => { setSelecionado(c); setDrawerTab('dados'); setDrawer(c) }} onClickHistorico={() => { setSelecionado(c); setDrawerTab('historico'); setDrawer(c) }} />)}
               </div>
             )}
             {outros.length > 0 && (
               <div>
                 {favoritos.length > 0 && <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Todos</p>}
-                {outros.map(c => <ClienteRow key={c.id} c={c} onToggleFav={toggleFavorito} onClick={() => { setSelecionado(c); setDrawer(c) }} />)}
+                {outros.map(c => <ClienteRow key={c.id} c={c} onToggleFav={toggleFavorito} onClick={() => { setSelecionado(c); setDrawerTab('dados'); setDrawer(c) }} onClickHistorico={() => { setSelecionado(c); setDrawerTab('historico'); setDrawer(c) }} />)}
               </div>
             )}
           </>
@@ -394,9 +395,10 @@ export default function ClientesPage() {
       {drawer !== false && (
         <ClienteDrawer
           cliente={drawer}
-          onClose={() => { setDrawer(false); setSelecionado(null) }}
+          onClose={() => { setDrawer(false); setSelecionado(null); setDrawerTab('dados') }}
           onSave={salvar}
           onDelete={selecionado ? deletar : undefined}
+          initialTab={drawerTab}
         />
       )}
     </div>
