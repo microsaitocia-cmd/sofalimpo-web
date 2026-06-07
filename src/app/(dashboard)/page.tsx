@@ -104,7 +104,7 @@ export default function DashboardPage() {
       {/* ── Ações rápidas ─────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 mb-8">
         {/* Novo orçamento */}
-        <Link href="/ordens"
+        <Link href="/orcamentos"
           className="flex flex-col bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow group">
           <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center mb-3">
             <PenLine className="w-5 h-5 text-indigo-600" />
@@ -114,17 +114,16 @@ export default function DashboardPage() {
         </Link>
 
         {/* Criar com IA */}
-        <button
+        <Link href="/sofabot"
           className="flex flex-col rounded-2xl p-4 shadow-md text-left transition-opacity hover:opacity-90"
           style={{ background: 'linear-gradient(135deg, #6366F1, #8B5CF6)' }}
-          onClick={() => { /* integração futura */ }}
         >
           <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center mb-3">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <p className="font-bold text-white text-sm">Criar com IA</p>
           <p className="text-xs text-white/75 mt-0.5">Descreva o serviço</p>
-        </button>
+        </Link>
       </div>
 
       {/* ── Agenda do dia ─────────────────────────────── */}
