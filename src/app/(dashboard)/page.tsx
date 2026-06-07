@@ -114,7 +114,7 @@ export default function DashboardPage() {
         </Link>
 
         {/* Criar com IA */}
-        <Link href="/sofabot"
+        <Link href="/orcamentos/ia"
           className="flex flex-col rounded-2xl p-4 shadow-md text-left transition-opacity hover:opacity-90"
           style={{ background: 'linear-gradient(135deg, #6366F1, #8B5CF6)' }}
         >
