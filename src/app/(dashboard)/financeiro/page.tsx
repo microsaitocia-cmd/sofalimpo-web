@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import {
   DollarSign, TrendingUp, Clock, AlertCircle,
-  TrendingDown, ArrowUpRight, ArrowDownRight, Minus,
+  TrendingDown, ArrowUpRight, ArrowDownRight, CalendarRange,
 } from 'lucide-react'
 
 interface MesReceita {
@@ -42,129 +42,138 @@ const CATEGORIA_STYLE: Record<string, string> = {
   outros:       'bg-slate-100 text-slate-500',
 }
 
-export default function FinanceiroPage() {
-  const [meses, setMeses] = useState<MesReceita[]>([])
-  const [despesas, setDespesas] = useState<Despesa[]>([])
-  const [loading, setLoading] = useState(true)
+function toInputDate(d: Date) {
+  return d.toISOString().slice(0, 10)
+}
 
+function inicioMesAtual() {
+  const d = new Date()
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
+export default function FinanceiroPage() {
+  const [dataInicio, setDataInicio] = useState(toInputDate(inicioMesAtual()))
+  const [dataFim,    setDataFim]    = useState(toInputDate(new Date()))
+  const [meses,      setMeses]      = useState<MesReceita[]>([])
+  const [despesas,   setDespesas]   = useState<Despesa[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [empresaId,  setEmpresaId]  = useState<string | null>(null)
+
+  // Busca empresaId uma vez
   useEffect(() => {
-    async function load() {
+    async function init() {
       const supabase = createClient()
       const user = (await supabase.auth.getUser()).data.user
       if (!user) return
       const meta = user.user_metadata ?? {}
-      const { data: empresaId } = await supabase.rpc('bootstrap_empresa', {
-        p_nome: meta.name ?? '',
-        p_email: meta.email_contato ?? '',
+      const { data } = await supabase.rpc('bootstrap_empresa', {
+        p_nome: meta.name ?? '', p_email: meta.email_contato ?? '',
       })
-      if (!empresaId) return
-
-      const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-
-      const [osRes, despesasRes] = await Promise.all([
-        supabase
-          .from('ordens_servico')
-          .select('valor_total, data_agendamento, status_pagamento')
-          .eq('empresa_id', empresaId)
-          .eq('status', 'concluido')
-          .order('data_agendamento', { ascending: false }),
-
-        supabase
-          .from('lancamentos_financeiros')
-          .select('id, descricao, valor, categoria, created_at')
-          .eq('empresa_id', empresaId)
-          .eq('tipo', 'despesa')
-          .gte('created_at', inicioMes)
-          .order('created_at', { ascending: false }),
-      ])
-
-      // Agrupar OS por mês
-      const agrupado: Record<string, MesReceita> = {}
-      for (const os of osRes.data ?? []) {
-        const d = new Date(os.data_agendamento)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-        if (!agrupado[key]) agrupado[key] = { mes: key, recebido: 0, pendente: 0, qtd: 0 }
-        if (os.status_pagamento === 'pago') {
-          agrupado[key].recebido += os.valor_total ?? 0
-        } else {
-          agrupado[key].pendente += os.valor_total ?? 0
-        }
-        agrupado[key].qtd++
-      }
-
-      setMeses(Object.values(agrupado).slice(0, 6))
-      setDespesas(
-        (despesasRes.data ?? []).map(d => ({
-          id: d.id,
-          descricao: d.descricao,
-          valor: d.valor,
-          categoria: d.categoria,
-          data: d.created_at,
-        }))
-      )
-      setLoading(false)
+      if (data) setEmpresaId(data)
     }
-    load()
+    init()
   }, [])
 
-  const mesAtual = meses[0]
-  const recebidoMes = mesAtual?.recebido ?? 0
-  const pendenteMes = mesAtual?.pendente ?? 0
-  const totalDespesas = despesas.reduce((s, d) => s + d.valor, 0)
-  const lucroLiquido = recebidoMes - totalDespesas
-  const ticketMedio = mesAtual && mesAtual.qtd > 0 ? (recebidoMes + pendenteMes) / mesAtual.qtd : 0
-  const totalGeral = meses.reduce((s, m) => s + m.recebido + m.pendente, 0)
+  const load = useCallback(async () => {
+    if (!empresaId) return
+    setLoading(true)
+    const supabase = createClient()
+    const inicio = `${dataInicio}T00:00:00`
+    const fim    = `${dataFim}T23:59:59`
+
+    const [osRes, despesasRes] = await Promise.all([
+      supabase
+        .from('ordens_servico')
+        .select('valor_total, data_agendamento, status_pagamento')
+        .eq('empresa_id', empresaId)
+        .eq('status', 'concluido')
+        .gte('data_agendamento', inicio)
+        .lte('data_agendamento', fim)
+        .order('data_agendamento', { ascending: false }),
+
+      supabase
+        .from('lancamentos_financeiros')
+        .select('id, descricao, valor, categoria, created_at')
+        .eq('empresa_id', empresaId)
+        .eq('tipo', 'despesa')
+        .gte('created_at', inicio)
+        .lte('created_at', fim)
+        .order('created_at', { ascending: false }),
+    ])
+
+    // Agrupar OS por mês
+    const agrupado: Record<string, MesReceita> = {}
+    for (const os of osRes.data ?? []) {
+      const d = new Date(os.data_agendamento)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!agrupado[key]) agrupado[key] = { mes: key, recebido: 0, pendente: 0, qtd: 0 }
+      if (os.status_pagamento === 'pago') {
+        agrupado[key].recebido += os.valor_total ?? 0
+      } else {
+        agrupado[key].pendente += os.valor_total ?? 0
+      }
+      agrupado[key].qtd++
+    }
+
+    setMeses(Object.values(agrupado))
+    setDespesas(
+      (despesasRes.data ?? []).map(d => ({
+        id: d.id, descricao: d.descricao, valor: d.valor,
+        categoria: d.categoria, data: d.created_at,
+      }))
+    )
+    setLoading(false)
+  }, [empresaId, dataInicio, dataFim])
+
+  useEffect(() => { load() }, [load])
+
+  const recebidoTotal  = meses.reduce((s, m) => s + m.recebido, 0)
+  const pendenteTotal  = meses.reduce((s, m) => s + m.pendente, 0)
+  const totalDespesas  = despesas.reduce((s, d) => s + d.valor, 0)
+  const lucroLiquido   = recebidoTotal - totalDespesas
+  const totalOs        = meses.reduce((s, m) => s + m.qtd, 0)
+  const ticketMedio    = totalOs > 0 ? (recebidoTotal + pendenteTotal) / totalOs : 0
+  const totalGeral     = meses.reduce((s, m) => s + m.recebido + m.pendente, 0)
 
   const statCards = [
-    {
-      label: 'Recebido no mês',
-      value: fmt(recebidoMes),
-      icon: ArrowUpRight,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50',
-    },
-    {
-      label: 'Pendente',
-      value: fmt(pendenteMes),
-      icon: Clock,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50',
-    },
-    {
-      label: 'Despesas do mês',
-      value: fmt(totalDespesas),
-      icon: ArrowDownRight,
-      color: 'text-red-600',
-      bg: 'bg-red-50',
-    },
-    {
-      label: 'Lucro líquido',
-      value: fmt(lucroLiquido),
-      icon: lucroLiquido >= 0 ? TrendingUp : TrendingDown,
-      color: lucroLiquido >= 0 ? 'text-blue-600' : 'text-red-600',
-      bg: lucroLiquido >= 0 ? 'bg-blue-50' : 'bg-red-50',
-    },
-    {
-      label: 'Ticket médio',
-      value: fmt(ticketMedio),
-      icon: DollarSign,
-      color: 'text-violet-600',
-      bg: 'bg-violet-50',
-    },
-    {
-      label: 'OS concluídas',
-      value: mesAtual?.qtd ?? 0,
-      icon: AlertCircle,
-      color: 'text-slate-600',
-      bg: 'bg-slate-100',
-    },
+    { label: 'Recebido',       value: fmt(recebidoTotal), icon: ArrowUpRight,   color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Pendente',       value: fmt(pendenteTotal), icon: Clock,          color: 'text-amber-600',   bg: 'bg-amber-50'   },
+    { label: 'Despesas',       value: fmt(totalDespesas), icon: ArrowDownRight, color: 'text-red-600',     bg: 'bg-red-50'     },
+    { label: 'Lucro líquido',  value: fmt(lucroLiquido),  icon: lucroLiquido >= 0 ? TrendingUp : TrendingDown,
+      color: lucroLiquido >= 0 ? 'text-blue-600' : 'text-red-600', bg: lucroLiquido >= 0 ? 'bg-blue-50' : 'bg-red-50' },
+    { label: 'Ticket médio',   value: fmt(ticketMedio),   icon: DollarSign,     color: 'text-violet-600',  bg: 'bg-violet-50'  },
+    { label: 'OS no período',  value: totalOs,             icon: AlertCircle,    color: 'text-slate-600',   bg: 'bg-slate-100'  },
   ]
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Financeiro</h1>
-        <p className="text-slate-500 text-sm mt-1">Resumo do mês atual</p>
+
+      {/* ── Título + filtro de período ─────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-end gap-4 justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Financeiro</h1>
+          <p className="text-slate-500 text-sm mt-1">Resumo do período selecionado</p>
+        </div>
+
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2.5 shadow-sm">
+          <CalendarRange className="w-4 h-4 text-slate-400 shrink-0" />
+          <input
+            type="date"
+            value={dataInicio}
+            max={dataFim}
+            onChange={e => setDataInicio(e.target.value)}
+            className="text-sm text-slate-700 font-medium bg-transparent outline-none"
+          />
+          <span className="text-slate-300 text-sm">–</span>
+          <input
+            type="date"
+            value={dataFim}
+            min={dataInicio}
+            max={toInputDate(new Date())}
+            onChange={e => setDataFim(e.target.value)}
+            className="text-sm text-slate-700 font-medium bg-transparent outline-none"
+          />
+        </div>
       </div>
 
       {/* ── Cards ─────────────────────────────────────── */}
@@ -186,11 +195,11 @@ export default function FinanceiroPage() {
         ))}
       </div>
 
-      {/* ── Despesas do mês ───────────────────────────── */}
+      {/* ── Despesas do período ───────────────────────── */}
       {(loading || despesas.length > 0) && (
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
-            Despesas do mês
+            Despesas do período
           </p>
           {loading ? (
             <div className="space-y-2">
@@ -216,9 +225,7 @@ export default function FinanceiroPage() {
                     )}>
                       {d.categoria}
                     </span>
-                    <span className="text-sm font-bold text-red-600">
-                      − {fmt(d.valor)}
-                    </span>
+                    <span className="text-sm font-bold text-red-600">− {fmt(d.valor)}</span>
                   </div>
                 </div>
               ))}
@@ -227,20 +234,20 @@ export default function FinanceiroPage() {
         </div>
       )}
 
-      {/* ── Histórico mensal ──────────────────────────── */}
+      {/* ── Histórico por mês ─────────────────────────── */}
       <Card className="border-0 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-base">Histórico mensal</CardTitle>
+          <CardTitle className="text-base">Por mês</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="space-y-3">
-              {[...Array(4)].map((_, i) => (
+              {[...Array(3)].map((_, i) => (
                 <div key={i} className="h-10 bg-slate-100 rounded-lg animate-pulse" />
               ))}
             </div>
           ) : meses.length === 0 ? (
-            <p className="text-center text-slate-400 py-8">Nenhuma OS concluída ainda</p>
+            <p className="text-center text-slate-400 py-8">Nenhuma OS concluída neste período</p>
           ) : (
             <div className="space-y-4">
               {meses.map(m => {
@@ -261,7 +268,6 @@ export default function FinanceiroPage() {
                   </div>
                 )
               })}
-              {/* Legenda */}
               <div className="flex gap-4 pt-1">
                 <span className="flex items-center gap-1.5 text-xs text-slate-500">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />Recebido
