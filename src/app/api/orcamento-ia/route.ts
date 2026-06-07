@@ -51,33 +51,48 @@ Regras:
 - Se a descrição mencionar qualquer nome de pessoa, procure na lista de CLIENTES CADASTRADOS e retorne o ID em "cliente_id"
 - Se não encontrar cliente correspondente, retorne "cliente_id": null`
 
-  let tentativa = 0
-  while (true) {
-    const res = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: 1024,
-      }),
-    })
+  try {
+    let tentativa = 0
+    while (true) {
+      const res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 1024,
+        }),
+      })
 
-    if (res.status === 429 && tentativa < 2) {
-      tentativa++
-      await new Promise(r => setTimeout(r, 3000 * tentativa))
-      continue
+      if (res.status === 429 && tentativa < 2) {
+        tentativa++
+        await new Promise(r => setTimeout(r, 3000 * tentativa))
+        continue
+      }
+
+      if (!res.ok) {
+        const body = await res.text()
+        return NextResponse.json({ error: `Erro Groq ${res.status}: ${body.slice(0, 300)}` }, { status: 502 })
+      }
+
+      const data = await res.json()
+      const raw: string = data.choices?.[0]?.message?.content ?? ''
+
+      const stripped = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
+      const match = stripped.match(/\{[\s\S]*\}/)
+      if (!match) {
+        return NextResponse.json({ error: `IA não retornou JSON. Resposta: ${raw.slice(0, 300)}` }, { status: 500 })
+      }
+
+      try {
+        return NextResponse.json(JSON.parse(match[0]))
+      } catch {
+        return NextResponse.json({ error: `JSON inválido da IA: ${match[0].slice(0, 300)}` }, { status: 500 })
+      }
     }
-
-    if (!res.ok) {
-      const body = await res.text()
-      return NextResponse.json({ error: `Erro ${res.status}: ${body}` }, { status: res.status })
-    }
-
-    const data = await res.json()
-    const raw = data.choices?.[0]?.message?.content ?? ''
-    const clean = raw.replace(/```json?/g, '').replace(/```/g, '').trim()
-    return NextResponse.json(JSON.parse(clean))
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json({ error: `Erro de rede ao chamar Groq: ${msg}` }, { status: 502 })
   }
 }

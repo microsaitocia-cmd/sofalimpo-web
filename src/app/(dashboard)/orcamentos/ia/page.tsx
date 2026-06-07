@@ -102,8 +102,12 @@ export default function OrcamentoIaPage() {
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error ?? 'Erro desconhecido')
+        let errMsg = `Erro ${res.status}`
+        try {
+          const err = await res.json()
+          errMsg = err.error ?? errMsg
+        } catch { /* resposta não era JSON */ }
+        throw new Error(errMsg)
       }
 
       const orcamento: OrcamentoIA = await res.json()
